@@ -1,0 +1,132 @@
+name: "!! INITIAL: Migrate Repo Template !!"
+
+on:
+  workflow_dispatch:
+    inputs:
+      group:
+        description: 'Artifact groupId'
+        required: true
+        default: 'org.acme'
+        type: string
+      name:
+        description: 'Artifact artifactId (recommended to align with repo name)'
+        required: true
+        default: 'fancy-library-name'
+        type: string
+      package:
+        description: 'Artifact package'
+        required: true
+        default: 'org.acme.fancy.lib'
+        type: string
+
+jobs:
+  migrate_repo_template:
+    name: Run Migration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: github.repository != 'thriving-dev/java-library-template-1'
+    steps:
+
+#      - name: Validate input params
+#        env:
+#          TODO: ${{ inputs.group }}
+#        run: |
+#          valid_types=(major minor patch)
+#          if [[ ! ${valid_types[*]} =~ "$TODO" ]]; then
+#            echo "Unknown release type: $TODO"
+#            exit 1
+#          fi
+
+      - name: echo 1
+        run: |
+          echo "github.event.repository.name: ${{ github.event.repository.name }}"
+          echo "github.repository: ${{ github.repository }}"
+          echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
+          echo "GITHUB_REPOSITORY_OWNER: $GITHUB_REPOSITORY_OWNER"
+          echo "GITHUB_ACTOR: $GITHUB_ACTOR"
+          echo "github.actor: ${{ github.actor }}"
+          
+      
+
+      - name: Checkout project sources
+        uses: actions/checkout@v4
+        with:
+          ref: main
+#          token: ${{ secrets.CI_GITHUB_TOKEN }}
+
+      - name: Migrate
+        env:
+          ARTIFACT_GROUP_OLD: "dev.thriving.oss"
+          ARTIFACT_GROUP_NEW: ${{ inputs.group }}
+          LIB_NAME_OLD: "java-library-template"
+          LIB_NAME_NEW: ${{ inputs.name }}
+          PACKAGE_OLD: "dev.thriving.oss.java.library.template"
+          PACKAGE_NEW: ${{ inputs.package }}
+        run: |
+          # gradle files
+          ## gradle.properties - initial version 
+          echo "version=0.0.1-SNAPSHOT" > gradle.properties
+          
+          ## build.gradle.kts
+          sed -i "s/group = \"$ARTIFACT_GROUP_OLD\"/group = \"$ARTIFACT_GROUP_NEW\"/g" build.gradle.kts
+          
+          ## settings.gradle.kts
+          sed -i "s/$LIB_NAME_NEW/$LIB_NAME_NEW/g" settings.gradle.kts
+          
+          ## java-library-template/build.gradle.kts
+          sed -i "s@group = \"dev.thriving.oss\"@group = \"${{ inputs.group }}\"@g" java-library-template/build.gradle.kts
+          sed -i "s@githubRepo = \"thriving-dev/java-library-template\"@githubRepo = \"${{ github.repository }}\"@g" java-library-template/build.gradle.kts
+          sed -i "s@developerId = \"hartmut-co-uk\"@developerId = \"$GITHUB_ACTOR\"@g" java-library-template/build.gradle.kts
+          sed -i "s@developerName = \"Hartmut Armbruster\"@developerName = \"Your Name\"@g" java-library-template/build.gradle.kts
+          sed -i "s@developerOrganization = \"thriving.dev\"@developerOrganization = \"ACME Corporation\"@g" java-library-template/build.gradle.kts
+          
+          # README from template
+          cp -f .github/template/README.md README.md
+          sed -i "s@thriving-dev/java-library-template-1@${{ github.repository }}@g" README.md
+          sed -i "s@thriving-dev.github.io/java-library-template-1@$GITHUB_REPOSITORY_OWNER.github.io/${{ github.event.repository.name }}@g" README.md
+          sed -i "s@dev.thriving.oss/java-library-template@${{ inputs.group }}/${{ inputs.name }}@g" README.md
+          
+          # gradle module 'java-library-template'
+          ## rename base folder
+          mv $LIB_NAME_OLD $LIB_NAME_NEW
+          
+          ## move files for all srcset to new package name path structure 
+          PACKAGE_PATH_OLD=$(echo "$PACKAGE_OLD" | tr "." "/")
+          PACKAGE_PATH_NEW=$(echo "$PACKAGE_NEW" | tr "." "/")
+          for srcset in intTest main test
+          do 
+            mkdir -p "$LIB_NAME_NEW/src/$srcset/java/$PACKAGE_PATH_NEW"
+            mv "$LIB_NAME_NEW/src/$srcset/java/$PACKAGE_PATH_OLD" "$LIB_NAME_NEW/src/$srcset/java/$PACKAGE_PATH_NEW"
+          done
+          
+          ## replace package name in java files
+          #find $LIB_NAME_NEW -type f -name "*.java" -print0 | xargs -0 sed -i '' -e "s@$PACKAGE_OLD@$PACKAGE_NEW@g"
+          #find $LIB_NAME_NEW -type f -name "*.java" -print0 | xargs -0 sed -i '' -e "s@$PACKAGE_OLD@$PACKAGE_NEW@g"
+          find $LIB_NAME_NEW -type f -name "*.java"  -exec sed -i'' -e "s@$PACKAGE_OLD@$PACKAGE_NEW@g" {} +
+
+          # GitHub actions
+          sed -i "s/$LIB_NAME_OLD/$LIB_NAME_NEW/g" .github/workflows/callable.publish-javadoc.yml
+          
+          # cleanup this very GitHub Actions workflow yml
+          rm .github/workflows/0.initial.migrate-repo-template.yml
+
+      - name: Commit files
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git status
+          git commit -m "chore: INITIAL Migrate Repo Template"
+
+      # Push changes
+      - name: Push changes
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          branch: main
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+#      # Push changes
+#      - name: Push changes
+#        run: |
+#          git push origin main
